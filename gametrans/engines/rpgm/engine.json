@@ -1,0 +1,8 @@
+{
+  "name": "rpgm",
+  "version": "0.2.1",
+  "protocol": ">=1,<2",
+  "entry": "RpgmPack",
+  "authors": ["GameTrans"],
+  "summary": "RPG Maker MV 引擎：读 data/*.json（含 SRD_DataCompressor 的 LZString 压缩），按引擎的数据结构申报玩家可见内容。"
+}

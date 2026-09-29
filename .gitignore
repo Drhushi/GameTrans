@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 工作区运行时状态：每个游戏工程自己的 .gametrans/ 目录
+.gametrans/
+dist/
+
+# 凭证：任何位置都不许入库
+credentials.json
+.env
+.env.*
+
+# 设计源文件
+*.psd

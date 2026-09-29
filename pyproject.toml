@@ -1,0 +1,27 @@
+[project]
+name = "gametrans"
+version = "0.2.1"
+description = "AI 驱动的游戏翻译工作台：引擎无关的五层内核（提取/翻译/写回/资源/交互），引擎适配以隔离的支持包形式接入。"
+requires-python = ">=3.11"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+# 刻意保持零运行时依赖：内核只用标准库，离线即可完整跑通 mock 全链路。
+dependencies = []
+
+# 可选的桌面壳：`pip install gametrans[desktop]` 后 open_panel 用独立窗口开面板，
+# `gametrans[shell]` 装多标签桌面壳（PySide6，优先级最高）；都不装则自动退回浏览器。
+# 不进 dependencies，零依赖约定不破。
+[project.optional-dependencies]
+desktop = ["pywebview"]
+shell = ["PySide6"]
+
+[project.scripts]
+gametrans = "gametrans.cli:main"
+
+[tool.uv]
+# 虚拟工程：不做构建/打包，仓库根目录即导入根，clone 下来就能跑。
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]

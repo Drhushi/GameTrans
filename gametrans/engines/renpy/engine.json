@@ -1,0 +1,8 @@
+{
+  "name": "renpy",
+  "version": "0.2.1",
+  "protocol": ">=1,<2",
+  "entry": "RenPyPack",
+  "authors": ["GameTrans"],
+  "summary": "Ren'Py 视觉小说引擎：解析 .rpy 脚本，产出官方 tl/<lang>/ 翻译层。"
+}

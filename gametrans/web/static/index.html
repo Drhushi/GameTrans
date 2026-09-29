@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gametrans 控制台</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" type="image/png" href="/static/logo-night.png" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/png" href="/static/logo-day.png" media="(prefers-color-scheme: light)">
+<script>
+/* 主题在首帧绘制前定死，避免切换闪烁。
+ * 偏好存 localStorage.gt-theme（dark / light / system）；system 在这里先按系统解析，
+ * 运行期的跟随与监听由 app.js 接管。 */
+(function () {
+  var pref = "system";
+  try { pref = localStorage.getItem("gt-theme") || "system"; } catch (_) {}
+  var dark = pref === "dark" ||
+    (pref === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  document.documentElement.dataset.pref = pref;
+})();
+</script>
+</head>
+<body>
+
+<!-- 桌面壳标题栏：窗口是无边框的，最小化 / 最大化 / 关闭由页内自绘（js/titlebar.js）。
+     window.pywebview 只在 pywebview 壳里注入，浏览器里永远保持 hidden。
+     拖动区必须是 pywebview 认的 pywebview-drag-region 类（写别的名字拖不动）；按钮放在拖动区外面。 -->
+<div id="titlebar" hidden>
+  <span class="pywebview-drag-region tb-title" id="titlebar-title">gametrans 面板</span>
+  <span class="pywebview-drag-region tb-rest"></span>
+  <button class="tb-btn" id="titlebar-min" type="button" title="最小化">&#x2500;</button>
+  <button class="tb-btn" id="titlebar-max" type="button" title="最大化 / 还原">&#x2751;</button>
+  <button class="tb-btn tb-close" id="titlebar-close" type="button" title="关闭">&#x2715;</button>
+</div>
+
+<aside class="side">
+  <a class="brand" href="#/overview">
+    <img class="brand-mark" src="/static/logo-night.png" data-logo-dark alt="" aria-hidden="true">
+    <img class="brand-mark" src="/static/logo-day.png" data-logo-light alt="" aria-hidden="true">
+    <span class="brand-text">
+      <b>gametrans</b>
+      <i>本地化控制台</i>
+    </span>
+  </a>
+
+  <nav id="side-nav" class="nav" aria-label="视图导航">
+    <a class="nav-item" href="#/overview" data-nav="overview"><span class="idx">01</span>总览<kbd>1</kbd></a>
+    <a class="nav-item" href="#/graph" data-nav="graph"><span class="idx">02</span>路径图<kbd>2</kbd></a>
+    <a class="nav-item" href="#/translations" data-nav="translations"><span class="idx">03</span>译文<kbd>3</kbd></a>
+    <a class="nav-item" href="#/resources" data-nav="resources"><span class="idx">04</span>资源<kbd>4</kbd></a>
+    <a class="nav-item" href="#/workbench" data-nav="workbench"><span class="idx">05</span>请求<kbd>5</kbd></a>
+    <a class="nav-item" href="#/settings" data-nav="settings"><span class="idx">06</span>设置<kbd>6</kbd></a>
+  </nav>
+
+  <div class="side-foot">
+    <div class="dotline">
+      <span class="dot" id="conn-dot" aria-hidden="true"></span>
+      <span id="conn-text">连接中…</span>
+    </div>
+    <div class="ver mono" id="side-version">gametrans</div>
+  </div>
+</aside>
+
+<div class="frame">
+
+  <header class="bar">
+    <div class="bar-title">
+      <h1 id="bar-title">总览</h1>
+      <p class="mono" id="project-path">读取中…</p>
+    </div>
+    <div class="badges" id="badges"></div>
+  </header>
+
+  <div id="banner" class="banner" hidden></div>
+
+  <main id="main">
+
+    <!-- 01 总览：流水线 + 指标 + 动态 + 成本与运行记录（原账本页并入：
+         覆盖/质量两块与指标砖是同一组数字，删重；工作区信息与设置页重复，砍掉） -->
+    <section class="view" data-view="overview">
+      <div class="hud panel" id="hero">
+        <b class="hud-c" aria-hidden="true"></b>
+        <div class="hud-row">
+          <span class="hud-tag mono">PIPELINE</span>
+          <span class="hint">点击任意一段跳到对应视图</span>
+        </div>
+        <ol class="pipe" id="pipe"></ol>
+      </div>
+
+      <div class="tiles" id="tiles"></div>
+
+      <div class="cols">
+        <section class="panel">
+          <h2>动态 <span class="hint" id="views-scope"></span></h2>
+          <div id="views" class="feed"></div>
+        </section>
+        <section class="panel">
+          <h2>花销 <span class="hint">token 与成本</span></h2>
+          <div id="ledger-cost"></div>
+        </section>
+      </div>
+
+      <section class="panel">
+        <h2>运行记录 <span class="hint" id="runs-hint"></span></h2>
+        <div id="ledger-warnings"></div>
+        <div class="table-wrap" id="runs-box"><table id="runs-table"></table></div>
+      </section>
+    </section>
+
+    <!-- 02 路径图：可拖拽缩放的画布 + 列表兜底 + 单元抽屉 -->
+    <section class="view" data-view="graph">
+      <section class="panel">
+        <div class="row spread">
+          <h2 style="margin-bottom:0;border:0;padding:0;">路径图 <span class="hint" id="graph-meta"></span></h2>
+          <div class="gbtns" style="display:flex;gap:8px;">
+            <button class="gbtn" id="graph-mode-canvas" type="button">画布</button>
+            <button class="gbtn" id="graph-mode-table" type="button">列表</button>
+          </div>
+        </div>
+        <div class="row" style="margin-top:12px;">
+          <div style="position:relative;flex:1;max-width:460px;">
+            <input type="search" id="graph-filter" class="search" style="width:100%;" placeholder="筛选：人物 / 术语 / 路径 / 原文…">
+            <div id="graph-suggest" class="graph-suggest" hidden></div>
+          </div>
+        </div>
+        <div id="graph-canvas-box" class="gwrap">
+          <div id="graph-canvas" class="gcanvas"></div>
+          <div class="row spread" style="padding:8px 12px;border-top:1px solid var(--line);">
+            <div class="glegend" id="graph-legend"></div>
+            <div class="row" style="gap:6px;">
+              <button class="gbtn" id="graph-reset" type="button" title="节点归位（撤销手动拖动）">⟳</button>
+              <button class="gbtn" id="graph-zoom-out" type="button">−</button>
+              <button class="gbtn" id="graph-zoom-fit" type="button">适配</button>
+              <button class="gbtn" id="graph-zoom-in" type="button">＋</button>
+            </div>
+          </div>
+        </div>
+        <div class="table-wrap tall" id="graph-table-box" hidden><table id="graph-table"></table></div>
+      </section>
+    </section>
+
+    <!-- 03 译文：单元工作单 —— 一行一场戏（一个单元），点开就是单元现场
+         （逐句原文/译文 + 碰过它的请求），与路径图抽屉同一个部件。 -->
+    <section class="view" data-view="translations">
+      <section class="panel">
+        <h2>翻译工作单 <span class="hint" id="translations-ratio"></span></h2>
+        <div class="row spread">
+          <div class="chips" id="translation-chips"></div>
+          <input type="search" id="translation-filter" class="search" placeholder="过滤：标题 / 原文 / 路径…">
+        </div>
+        <div class="inbox" id="unit-list"></div>
+      </section>
+    </section>
+
+    <!-- 04 资源：术语书（一行一个实体，五栏：key 写法列表 / profile 事实列表 /
+         constant 蓝绿灯 / order / position）+ 待审更正 + 风格指南。
+         术语书是左右分栏：左清单（点行换详情、勾选批量删），右详情（写法、
+         设定、注入栏位、这一行的待审更正、✎ 修改 / 🗑 删除）；
+         "＋"弹出添加表单；改已有的译名或事实要先进待审队列，采用才生效
+         （改到一半点了别处会提醒未保存）。 -->
+    <section class="view" data-view="resources">
+      <section class="panel" id="card-termbook">
+        <h2>术语书 <span class="hint agent-only">一行一个实体：写法（各带自己的译名）+ 事实列表 · 蓝灯=每次都注入，绿灯=写法命中才注入 · order 大的靠后，tail 排在本段最后 · 已否决的只留档</span>
+          <button class="gbtn h2-btn" id="term-candidates-scan" type="button" title="从场摘要抽实体（一个实体一行，重复点不会重复产行）">从摘要抽实体</button>
+          <button class="gbtn h2-btn" id="termbook-add-toggle" type="button">＋ 添加</button>
+        </h2>
+        <p class="hint op-result" id="termbook-result"></p>
+        <div id="termbook-bulk" class="dirtybar" hidden>
+          <span id="termbook-bulk-note">已选 0 条</span>
+          <button id="termbook-bulk-delete" type="button" class="danger">删除所选</button>
+          <button id="termbook-bulk-cancel" type="button" class="ghost">取消</button>
+        </div>
+        <div id="termbook-add" hidden>
+          <div class="cols">
+            <div id="term-add" class="asset-form"></div>
+          </div>
+        </div>
+        <div class="tb-controls">
+          <div class="chips" id="termbook-chips"></div>
+          <input type="search" class="search" id="termbook-search"
+            placeholder="搜索写法 / 译名 / 设定…" spellcheck="false">
+        </div>
+        <div id="termbook"></div>
+      </section>
+
+      <section class="panel" id="card-term-pending">
+        <h2>待审更正 <span class="hint" id="term-pending-counts"></span><span class="hint agent-only">改已有的译名或事实要先排在这里 —— 采用才替换，丢弃则一个字节都不动</span></h2>
+        <p class="hint op-result" id="term-pending-result"></p>
+        <div id="term-pending"></div>
+      </section>
+
+      <section class="panel" id="card-style">
+        <h2>风格指南 <span class="tag">一等资源</span></h2>
+        <div id="style-add" class="asset-form"></div>
+        <p class="hint op-result" id="style-result"></p>
+        <div class="table-wrap"><table id="style-table"></table></div>
+        <div id="style-problems"></div>
+      </section>
+    </section>
+
+    <!-- 06 设置：项目（就地切到另一个游戏目录）+ 界面（主题 / agent 视图 / 新手教程 / 检查更新）+ 模型接入 / 翻译配置（微调项收进折叠）/ 引擎 -->
+    <section class="view" data-view="settings">
+      <section class="panel" id="card-project">
+        <h2>项目 <span class="hint">面板当前打开的游戏工程；点一下就能换，不用关窗口</span></h2>
+        <p class="hint mono" id="project-current">读取中…</p>
+        <div class="chips" id="project-recent" style="margin-top:10px;"></div>
+        <div class="row" style="margin-top:10px;">
+          <input type="text" id="project-path-input" placeholder="不在上面？填游戏目录的完整路径" spellcheck="false">
+          <button id="project-pick" type="button" hidden>浏览…</button>
+          <button id="project-switch" type="button">打开</button>
+        </div>
+        <p class="hint" id="project-result"></p>
+      </section>
+
+      <section class="panel" id="card-ui">
+        <h2>界面</h2>
+        <div class="row spread">
+          <div class="row" id="ui-theme" role="group" aria-label="界面主题">
+            <button class="gbtn" data-theme-pref="system" type="button">跟随系统</button>
+            <button class="gbtn" data-theme-pref="light" type="button">日间</button>
+            <button class="gbtn" data-theme-pref="dark" type="button">夜间</button>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="show-all">
+            <span class="track" aria-hidden="true"><span class="knob"></span></span>
+            <span class="switch-label">agent 视图</span>
+          </label>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <button class="gbtn" id="tutorial-replay" type="button">重看新手教程</button>
+          <button class="gbtn" id="update-check" type="button">检查更新</button>
+          <span class="hint mono" id="update-result">点按钮才访问一次 GitHub</span>
+        </div>
+      </section>
+
+      <section class="panel" id="card-access">
+        <h2>模型接入</h2>
+        <div class="access-grid">
+          <label class="field" title="openai：任何 OpenAI 兼容接口；mock：本地假模型，空跑流程用">
+            <span>接入方式</span>
+            <select id="access-provider"></select>
+          </label>
+          <label class="field" title="服务商给的模型 ID，原样填">
+            <span>模型名</span>
+            <input type="text" id="credential-model" placeholder="例如 deepseek-chat" spellcheck="false">
+          </label>
+          <label class="field wide-field" title="OpenAI 官方接口时可留空">
+            <span>接口地址</span>
+            <input type="text" id="credential-base-url" placeholder="例如 https://api.deepseek.com/v1" spellcheck="false">
+          </label>
+          <label class="field wide-field" title="存在工作区单独的文件里，不进 project.json；留空表示不修改">
+            <span>API Key</span>
+            <input type="password" id="credential-api-key" spellcheck="false" autocomplete="off">
+          </label>
+        </div>
+        <div class="row">
+          <button id="credential-save" type="button">保存接入</button>
+          <button id="credential-clear" type="button" class="ghost" hidden>清除已存密钥</button>
+          <span class="hint mono" id="credential-detail">读取中…</span>
+        </div>
+        <p class="hint" id="credential-result"></p>
+      </section>
+
+      <!-- AI agent：面板是观察站，长活是 agent 跑的——这张卡给「接入方法」，
+           MCP 配置按运行形态（冻结 / 源码）由后端 ping 字段生成，一键复制 -->
+      <section class="panel" id="card-agent">
+        <h2>AI agent <span class="tag">翻译的施工队</span></h2>
+        <p class="hint" style="margin-bottom:10px;">
+          扫描、翻译、写回这些长活由你的 AI agent 跑，面板负责看现场——
+          没接 agent，翻译跑不起来。
+        </p>
+        <div class="row spread">
+          <span class="hint">任何支持 MCP 的客户端都认这段配置</span>
+          <button class="gbtn" id="agent-mcp-copy" type="button">复制配置</button>
+        </div>
+        <pre class="mono agent-mcp-json" id="agent-mcp-json"></pre>
+        <p class="hint" id="agent-mcp-how" style="margin-top:8px;"></p>
+        <p class="hint" style="margin-top:6px;">
+          还没有 agent？装一个就行：
+          <a href="https://github.com/openai/codex" target="_blank" rel="noreferrer">Codex CLI</a> 或
+          <a href="https://claude.com/claude-code" target="_blank" rel="noreferrer">Claude Code</a>，
+          都支持 MCP，接法同上。
+        </p>
+      </section>
+
+      <div class="cols">
+        <section class="panel" id="card-config">
+          <h2>翻译配置</h2>
+          <div id="config-groups" class="config-groups"></div>
+          <details class="more" id="config-advanced" hidden>
+            <summary>更多设置</summary>
+            <div id="config-advanced-groups" class="config-groups"></div>
+          </details>
+          <div class="dirtybar" id="config-dirtybar" hidden>
+            <span>有未保存的更改</span>
+            <button id="config-discard" type="button" class="ghost">放弃</button>
+            <button id="config-save" type="button">保存</button>
+          </div>
+          <p class="hint" id="config-result"></p>
+        </section>
+
+        <section class="panel" id="card-engine">
+          <h2>引擎 <span class="tag" id="engine-badge">官方工具</span></h2>
+          <p class="hint mono" id="toolchain-detail">读取中…</p>
+          <div class="row" id="engine-sdk-row">
+            <input type="text" id="engine-sdk-path" placeholder="官方 SDK 根目录（含 renpy/ 与 lib/ 的那一层）" spellcheck="false">
+            <button id="engine-option-save" type="button">保存并检测</button>
+          </div>
+          <p class="hint" id="engine-option-result"></p>
+        </section>
+      </div>
+
+      <!-- 指令台（原独立「指令」页并入）：给 agent 的命令参考清单，agent 视图打开才显示 -->
+      <details class="more agent-only" id="ops-more">
+        <summary>指令台 —— 全部命令，点击复制</summary>
+        <p class="hint">
+          面板直接做的事：看进度、查详情、改配置与凭证、编辑内容资产（术语书 / 风格 / 知识）、
+          改某条译文。<br>
+          面板不做的事：扫描、翻译、写回、封包 —— 这些是长任务，由 agent 调度或在 CLI 执行；
+          下面每张卡都可以一键复制成命令交给它们。带「面板」标记的能在「资源」页直接执行。
+        </p>
+        <div id="operations" class="operations"></div>
+      </details>
+    </section>
+
+    <!-- 05 请求（原「工作台」）：请求台账（拦截+真跑合并）/ 请求模板（看改存切+预览）。
+         单元与场次的结构视图归路径图，这里只管"请求长什么样、发出去过什么"。 -->
+    <section class="view" data-view="workbench">
+      <section class="panel">
+        <h2>请求 <span class="hint">请求长什么样、发出去过什么 —— 一页看齐 · 单元与场次看<a href="#/graph">路径图</a></span></h2>
+        <div class="row spread">
+          <div class="chips" id="workbench-tabs"></div>
+          <div class="chips" id="wb-ledger-warn"></div>
+        </div>
+
+        <!-- 台账：拦截下来的 + 真发出去的，合成一张表（长列表服务端分页） -->
+        <div id="wb-ledger">
+          <div class="row spread">
+            <p class="hint" id="wb-ledger-meta"></p>
+            <input type="text" id="wb-ledger-filter" placeholder="过滤：运行 / 阶段 / 模板 / 模型"
+                   spellcheck="false" style="width:280px;">
+          </div>
+          <div class="table-wrap tall" id="wb-ledger-box"><table id="wb-ledger-table"></table></div>
+          <div class="row" id="wb-ledger-pager"></div>
+          <div id="wb-ledger-detail"></div>
+        </div>
+
+        <!-- 模板：看 / 改 / 存 / 切，预览走生产那条装配路径 -->
+        <div id="wb-template" hidden>
+          <div id="wb-template-body"></div>
+        </div>
+      </section>
+    </section>
+
+  </main>
+
+  <footer class="statusline">
+    <span class="mono" id="footer-status">—</span>
+    <span class="cursor" aria-hidden="true"></span>
+    <span class="hint agent-only" id="footer-hint">自动刷新：运行中约 2 秒 · 空闲约 8 秒 · 页面切走即暂停</span>
+  </footer>
+
+</div>
+
+<div id="toast" class="toast mono" hidden></div>
+<div id="drawer-root"></div>
+
+<!-- 页内探窗：首次打开「agent 视图」时解释它多显示了什么（确认 / 取消 / 下次不再提醒） -->
+<div id="agent-view-tip" class="amodal-mask" hidden>
+  <div class="amodal">
+    <h3>打开「agent 视图」？</h3>
+    <p>动态页会多出 <b>agent 之间流转的内部信息</b>（比如翻译批次卡）—— 平时多半是空的，盯 agent 干活时才用得上。</p>
+    <p>各页里给 agent 看的辅助信息（<b>指令台、机制说明</b>这类）也会一并显示。</p>
+    <label class="checkline"><input type="checkbox" id="agent-view-tip-skip">下次不再提醒</label>
+    <div class="row" style="justify-content:flex-end;">
+      <button class="gbtn" id="agent-view-tip-cancel" type="button">取消</button>
+      <button class="gbtn" id="agent-view-tip-ok" type="button">确认开启</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="/static/js/app.js"></script>
+</body>
+</html>
